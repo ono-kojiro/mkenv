@@ -1,0 +1,192 @@
+#!/usr/bin/env sh
+
+set -e
+top_dir="$(cd "$(dirname "$0")" > /dev/null 2>&1 && pwd)"
+script=${0##*/}
+
+url_base="https://ftp.jaist.ac.jp/pub/GNU/make"
+name="make"
+version="0.0.2"
+
+if [ "x$MKENV_ROOT" = "x" ]; then
+  echo "ERROR : no MKENV_ROOT environment variable" 1>&2
+  exit 1
+fi
+
+xenv_root="$MKENV_ROOT"
+
+do_help()
+{
+  echo "usage : $script [<options>] command"
+}
+
+do_version()
+{
+  echo "$version"
+}
+
+do_fetch()
+{
+  cwd=$(pwd)
+  mkdir -p "$cachedir"
+  if [ ! -e "$cachedir/${name}-${targetver}.tar.gz" ]; then
+    cd $cachedir
+    wget ${url_base}/${name}-${targetver}.tar.gz
+  fi
+
+  cd ${cwd}
+}
+
+do_extract()
+{
+  tar -C $xenv_root/source/ -xf $cachedir/${name}-${targetver}.tar.*
+}
+
+do_patch()
+{
+  # patch
+  cd $srcdir
+  case ${targetver} in
+    * )
+      find ${top_dir}/../patches/ -name "3.x-*.patch" -exec patch -p1 -i {} \;
+      find ${top_dir}/../patches/ -name "4.x-*.patch" -exec patch -p1 -i {} \;
+      ;;
+  esac
+}
+
+do_configure()
+{
+  # configure
+  mkdir -p $builddir
+  cd $builddir
+
+  case ${targetver} in
+    * )
+      if [ -e "$srcdir/CMakeLists.txt" ]; then
+        cmake -G "Ninja" ${srcdir}
+      elif [ ! -e "./Makefile" ]; then
+        sh $srcdir/configure --prefix=$destdir
+      else
+        echo "INFO : skip configure" 1>&2
+      fi
+      ;;
+    * )
+      echo "ERROR : invalid version, ${targetver}" 1>&2
+      exit 1
+      ;;
+  esac
+
+  cd ${top_dir}
+}
+
+do_build()
+{
+  cd ${builddir}
+  case ${targetver} in
+    * )
+      if [ -e "build.ninja" ]; then
+        ninja
+      elif [ -e "Makefile" ]; then
+        make -C $builddir -j `nproc`
+      else
+        echo "no files for build"
+        exit 1
+      fi
+      ;;
+  esac
+  cd ${top_dir}
+}
+
+do_install()
+{
+  cd ${builddir}
+  case ${targetver} in
+    * )
+      if [ -e "build.ninja" ]; then
+        cmake --install . --prefix=${destdir}
+      elif [ -e "Makefile" ]; then
+        make -C $builddir install
+      else
+        echo "no files for build"
+        exit 1
+      fi
+      ;;
+  esac
+  cd ${top_dir}
+}
+
+while [ "$#" -ne 0 ]; do
+  case "$1" in
+    --help | -h )
+      do_help
+      exit 1
+      ;;
+    --version | -v )
+      do_version
+      exit 1
+      ;;
+    * )
+      break
+      ;;
+  esac
+
+  shift
+done
+
+if [ "$#" -eq 0 ]; then
+  do_help
+  exit 1
+fi
+
+cmd=$1
+shift
+
+if [ "$#" -eq 0 ]; then
+  do_help
+  exit 1
+fi
+
+targetver=$1
+shift
+
+if [ -z "$cmd" ] || [ -z "$targetver" ]; then
+  do_help
+  exit 1
+fi
+
+srcdir="$xenv_root/source/${name}-${targetver}"
+builddir="$xenv_root/build/${name}-${targetver}"
+destdir="$xenv_root/versions/${targetver}"
+
+cachedir="$xenv_root/cache"
+
+case "$cmd" in
+  help )
+    do_help
+    exit 1
+    ;;
+  fetch )
+    do_fetch
+    ;;
+  extract )
+    do_extract
+    ;;
+  patch )
+    do_patch
+    ;;
+  configure | config )
+    do_configure
+    ;;
+  build )
+    do_build
+    ;;
+  install )
+    do_install
+    ;;
+  * )
+    echo "invalid command, $cmd"
+    exit 1
+    ;;
+esac
+
+

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -e
+version="0.0.1"
+
+echo "mkenv ${version}"
+
+usage()
+{
+  echo "usage : mkenv"
+}
+
+usage
+
